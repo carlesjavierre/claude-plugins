@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          claude plugin validate .
+          shopt -s nullglob
+          for dir in plugins/*/; do
+            claude plugin validate --strict "$dir"
+          done
+
+      # Claude Code only refreshes a cached plugin when its version changes,
+      # so an unbumped change never reaches users.
+      - name: Require version bump for changed plugins
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            echo "No base commit to compare against; skipping."
+            exit 0
+          fi
+          shopt -s nullglob
+          failed=0
+          for dir in plugins/*/; do
+            name=$(basename "$dir")
+            manifest="plugins/$name/.claude-plugin/plugin.json"
+            version=$(jq -er .version "$manifest") || { echo "::error::$manifest has no version"; failed=1; continue; }
+            git diff --quiet "$BASE" HEAD -- "plugins/$name" && continue
+            old=$(git show "$BASE:$manifest" 2>/dev/null | jq -r .version) || continue
+            if [ "$old" = "$version" ]; then
+              echo "::error::$name changed but its version is still $version"
+              failed=1
+            fi
+          done
+          exit $failed
+
+      - name: Release bumped plugins
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          for dir in plugins/*/; do
+            name=$(basename "$dir")
+            version=$(jq -r .version "plugins/$name/.claude-plugin/plugin.json")
+            tag="$name/v$version"
+            git rev-parse -q --verify "refs/tags/$tag" >/dev/null && continue
+            prev=$(git tag -l "$name/v*" --sort=-v:refname | head -n1)
+            notes=$(git log --format='- %s' ${prev:+"$prev"..}HEAD -- "plugins/$name")
+            gh release create "$tag" --target "$GITHUB_SHA" --title "$name v$version" --notes "$notes"
+          done

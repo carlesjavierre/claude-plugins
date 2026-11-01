@@ -1,0 +1,11 @@
+{
+  "name": "carlesjavierre",
+  "owner": {
+    "name": "Carles Javierre",
+    "email": "info@carlesjavierre.com"
+  },
+  "metadata": {
+    "description": "Carles Javierre's custom Claude Code plugins."
+  },
+  "plugins": []
+}
