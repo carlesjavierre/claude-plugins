@@ -6,7 +6,7 @@ Lets Claude, and you, ask cheap **decision models** typed questions and get cali
 - **choice**: one of your options, with per-option probabilities. Every choice also gets an `other` option and a hidden "does any option fit?" check; `none_fit` is set when the model picks `other` or the check says nothing fits
 - **score**: a level on your ordered scale
 
-Claude uses it on its own (through the bundled `consulting-decision-models` skill) to triage files and logs it hasn't read and to get cheap second opinions, at a fraction of its own token cost. Ask several models at once and they must agree unanimously, or Claude investigates instead.
+Claude uses it on its own (through the bundled `consulting-decision-models` skill) to triage files and logs it hasn't read and to get cheap second opinions, at a fraction of its own token cost. Ask several models at once and they must agree (unanimously or by majority, your choice), or Claude investigates instead.
 
 ## Install
 
@@ -33,15 +33,31 @@ Requires Node.js 20 or later. Set at least one API key when prompted, or later w
 
 **OpenRouter routing** (`openrouterSort`): OpenRouter serves some models through several hosts (Clef-flash has four). `default` keeps your OpenRouter account routing; `latency` prefers the fastest host, `price` the cheapest.
 
-When a model is reachable through several providers, the vendor's own API is used first, then gateways. Set `preferredProvider` to change that.
-
 **Custom gateway**: `customUrl` is the full endpoint URL, `customFormat` is `systemone` (the Jev/Clef request shape) or `openai` (the OpenAI Decisions shape), and `customModels` maps model names to the gateway's IDs, e.g. `jev=typesafe/jev`.
+
+## Choosing models and providers
+
+Each model has one **Use** option that decides whether it's asked and which provider it goes through:
+
+| Option | Choices |
+|---|---|
+| Use Jev | `auto`, `off`, `typesafe`, `cloudflare`, `openrouter`, `vercel`, `custom` |
+| Use Clef | `auto`, `off`, `cloudflare`, `openrouter`, `custom` |
+| Use Clef-flash | `auto`, `off`, `cloudflare`, `openrouter`, `custom` |
+| Use GPT-6 Luna | `auto`, `off`, `openai`, `cloudflare`, `openrouter`, `vercel`, `custom` |
+
+- **`auto`** (the default): the vendor's own API when its key is set (TypeSafe for Jev, Cloudflare for Clef and Clef-flash, OpenAI for GPT-6 Luna), otherwise the first gateway with a key, in this order: OpenRouter, Vercel, Cloudflare (as a third-party model, for Jev and GPT-6 Luna), custom.
+- **A provider**: the model goes only there. This is how you mix routes, e.g. Clef through Cloudflare, GPT-6 Luna through OpenAI and Jev through TypeSafe, or two models on OpenRouter and the rest elsewhere. If that provider has no key (or, for `custom`, doesn't list the model in `customModels`), the model is never sent anywhere else: `/decision-models:setup` shows it as misrouted, naming it errors with the option to fix, and asking all models skips it with a note.
+- **`off`**: the model is left out whenever all models are asked (consensus, `/opinion-all`, `cheapest`). Naming it explicitly (`/opinion clef …`) still works, routed as `auto`. An OpenRouter key alone reaches all four models, so set the ones you don't want to `off`.
+
+The choices list every provider that serves the model, whether or not you've set its key: Claude Code plugin options have a fixed list of choices, so it can't hide the ones you haven't configured. `/decision-models:setup` shows which provider each model actually uses.
+
+Version 0.1.0 had on/off checkboxes under the same names; a saved `true` reads as `auto` and `false` as `off`, so nothing needs reconfiguring.
 
 ## Default model and consensus
 
 These plugin options decide what Claude and `/opinion` ask:
 
-- **Use Jev / Use Clef / Use Clef-flash / Use GPT-6 Luna** (all on by default): which configured models count when asking all of them, that is in consensus, `/opinion-all` and `cheapest`. An OpenRouter key alone reaches all four; untick the ones you don't want. Naming a model explicitly (`/opinion clef …`) still works when it's unticked.
 - **Default model**: `cheapest` (the default; jev, then clef-flash, gpt-6-luna, clef, among those enabled) or one of the four models.
 - **Consensus**:
   - `off` (the default): ask only the default model.
@@ -82,3 +98,8 @@ npm run typecheck
 npm run build   # writes dist/server.js, which is committed
 cd ../.. && claude --plugin-dir plugins/decision-models
 ```
+
+How it runs:
+
+- The MCP server is declared in `.claude-plugin/plugin.json` under `mcpServers`, which passes the plugin options to it as `DM_*` environment variables. It isn't in a `.mcp.json`, because Claude Code also loads a `.mcp.json` in the folder it's started from as a project config, without plugin variables, which breaks the server. Start Claude Code from the repo root, as above.
+- Stats go to `calls.jsonl` in the folder Claude Code passes as `CLAUDE_PLUGIN_DATA`: `~/.claude/plugins/data/decision-models-carlesjavierre/` when installed from the marketplace, `…/decision-models-inline/` when loaded with `--plugin-dir`. Claude Code sets that variable for plugin servers itself; it isn't listed in the server's `env`, where it wouldn't be expanded.

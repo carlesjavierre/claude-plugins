@@ -36858,15 +36858,27 @@ function allRoutes() {
     );
     add("custom", format, () => customUrl, ["DM_CUSTOM_API_KEY"], models, "the customApiKey option");
   }
-  const preferred = env("DM_PREFERRED_PROVIDER");
-  if (preferred && preferred !== "auto") {
-    for (const list of routes2.values()) list.sort((a, b) => Number(b.provider === preferred) - Number(a.provider === preferred));
+  for (const [model, variable] of Object.entries(USE_OPTION)) {
+    const pinned = env(variable);
+    if (!pinned || NOT_PINNED.includes(pinned)) continue;
+    const list = routes2.get(model)?.filter((r) => r.provider === pinned) ?? [];
+    if (list.length) {
+      routes2.set(model, list);
+      continue;
+    }
+    routes2.delete(model);
+    const configured2 = providerStatus.find((s) => s.provider === pinned)?.configured;
+    misrouted[model] = `${model} is set to go through ${pinned} ("Use ${USE_TITLE[model]}" option), which ${configured2 ? "doesn't serve it" : "has no key set"}.`;
   }
   return routes2;
 }
-var routes = allRoutes();
 var USE_OPTION = { jev: "DM_USE_JEV", clef: "DM_USE_CLEF", "clef-flash": "DM_USE_CLEF_FLASH", "gpt-6-luna": "DM_USE_GPT_6_LUNA" };
-var enabled = [...routes.keys()].filter((m) => !["false", "0"].includes(process.env[USE_OPTION[m]]?.trim() ?? ""));
+var USE_TITLE = { jev: "Jev", clef: "Clef", "clef-flash": "Clef-flash", "gpt-6-luna": "GPT-6 Luna" };
+var OFF = ["off", "false", "0"];
+var NOT_PINNED = ["auto", "true", "1", ...OFF];
+var misrouted = {};
+var routes = allRoutes();
+var enabled = [...routes.keys()].filter((m) => !OFF.includes(process.env[USE_OPTION[m]]?.trim() ?? ""));
 var CHEAPEST = ["jev", "clef-flash", "gpt-6-luna", "clef"];
 var consensus = env("DM_CONSENSUS") ?? "off";
 var agreement = consensus === "majority" ? "majority" : "unanimous";
@@ -36886,8 +36898,11 @@ function resolveModels(spec) {
   }
   const unknown2 = resolved.models.filter((m) => !routes.has(m));
   if (unknown2.length) {
-    throw new Error(`Not configured: ${unknown2.join(", ")}. Available: ${[...routes.keys()].join(", ") || "none"}.`);
+    const reasons = unknown2.map((m) => misrouted[m]).filter(Boolean).join(" ");
+    throw new Error(`Not configured: ${unknown2.join(", ")}. ${reasons ? reasons + " " : ""}Available: ${[...routes.keys()].join(", ") || "none"}.`);
   }
+  const skipped = spec?.trim() === "all" || !spec && consensus !== "off" ? Object.values(misrouted) : [];
+  if (skipped.length) resolved.note = [resolved.note, `Skipped: ${skipped.join(" ")}`].filter(Boolean).join(" ");
   return resolved;
 }
 var MIME = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" };
@@ -37159,7 +37174,7 @@ server.registerTool(
         return { model, enabled: enabled.includes(model), ok: false, error: e.message };
       }
     }));
-    const output2 = { providers: providerStatus, default: defaults, consensus, models: pings };
+    const output2 = { providers: providerStatus, default: defaults, consensus, models: pings, ...Object.keys(misrouted).length ? { misrouted } : {} };
     return { content: [{ type: "text", text: JSON.stringify(output2, null, 2) }] };
   }
 );

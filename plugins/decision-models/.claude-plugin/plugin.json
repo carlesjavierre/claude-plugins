@@ -1,6 +1,6 @@
 {
   "name": "decision-models",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Ask cheap decision models (Jev, Clef, GPT-6 Luna) typed questions for calibrated yes/no, choice and score answers, alone or as a consensus. Direct API keys or gateways (OpenRouter, Vercel, custom).",
   "author": {
     "name": "Carles Javierre",
@@ -43,28 +43,60 @@
       "default": "off"
     },
     "useJev": {
-      "type": "boolean",
+      "type": "string",
       "title": "Use Jev",
-      "description": "Include Jev when asking all models (consensus, /opinion-all, cheapest). Naming it explicitly still works.",
-      "default": true
+      "description": "Which provider Jev goes through. auto: TypeSafe directly if its key is set, else the first gateway with a key. off: left out when asking all models (consensus, /opinion-all, cheapest); naming it explicitly still works.",
+      "options": [
+        "auto",
+        "off",
+        "typesafe",
+        "cloudflare",
+        "openrouter",
+        "vercel",
+        "custom"
+      ],
+      "default": "auto"
     },
     "useClef": {
-      "type": "boolean",
+      "type": "string",
       "title": "Use Clef",
-      "description": "Include Clef when asking all models (consensus, /opinion-all, cheapest). Naming it explicitly still works.",
-      "default": true
+      "description": "Which provider Clef goes through. auto: Cloudflare directly if its key is set, else the first gateway with a key. off: left out when asking all models (consensus, /opinion-all, cheapest); naming it explicitly still works.",
+      "options": [
+        "auto",
+        "off",
+        "cloudflare",
+        "openrouter",
+        "custom"
+      ],
+      "default": "auto"
     },
     "useClefFlash": {
-      "type": "boolean",
+      "type": "string",
       "title": "Use Clef-flash",
-      "description": "Include Clef-flash when asking all models (consensus, /opinion-all, cheapest). Naming it explicitly still works.",
-      "default": true
+      "description": "Which provider Clef-flash goes through. auto: Cloudflare directly if its key is set, else the first gateway with a key. off: left out when asking all models (consensus, /opinion-all, cheapest); naming it explicitly still works.",
+      "options": [
+        "auto",
+        "off",
+        "cloudflare",
+        "openrouter",
+        "custom"
+      ],
+      "default": "auto"
     },
     "useGpt6Luna": {
-      "type": "boolean",
+      "type": "string",
       "title": "Use GPT-6 Luna",
-      "description": "Include GPT-6 Luna when asking all models (consensus, /opinion-all, cheapest). Naming it explicitly still works.",
-      "default": true
+      "description": "Which provider GPT-6 Luna goes through. auto: OpenAI directly if its key is set, else the first gateway with a key. off: left out when asking all models (consensus, /opinion-all, cheapest); naming it explicitly still works.",
+      "options": [
+        "auto",
+        "off",
+        "openai",
+        "cloudflare",
+        "openrouter",
+        "vercel",
+        "custom"
+      ],
+      "default": "auto"
     },
     "typesafeApiKey": {
       "type": "string",
@@ -119,21 +151,6 @@
       "sensitive": true,
       "description": "Empty: falls back to AI_GATEWAY_API_KEY."
     },
-    "preferredProvider": {
-      "type": "string",
-      "title": "Preferred provider",
-      "description": "When a model is reachable through several providers, use this one first. auto: vendors directly, then gateways.",
-      "options": [
-        "auto",
-        "typesafe",
-        "cloudflare",
-        "openai",
-        "openrouter",
-        "vercel",
-        "custom"
-      ],
-      "default": "auto"
-    },
     "customUrl": {
       "type": "string",
       "title": "Custom gateway endpoint URL",
@@ -178,7 +195,6 @@
         "DM_OPENAI_API_KEY": "${user_config.openaiApiKey}",
         "DM_OPENROUTER_API_KEY": "${user_config.openrouterApiKey}",
         "DM_VERCEL_API_KEY": "${user_config.vercelApiKey}",
-        "DM_PREFERRED_PROVIDER": "${user_config.preferredProvider}",
         "DM_CUSTOM_URL": "${user_config.customUrl}",
         "DM_CUSTOM_FORMAT": "${user_config.customFormat}",
         "DM_CUSTOM_API_KEY": "${user_config.customApiKey}",

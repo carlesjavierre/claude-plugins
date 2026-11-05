@@ -4,7 +4,7 @@ import { z } from "zod";
 import { extname } from "node:path";
 import { combine, mean } from "./consensus.ts";
 import { record, stats } from "./stats.ts";
-import { agreement, ask, consensus, defaultModels, enabled, loadInput, MIME, providerStatus, resolveModels, routes, type ModelResult, type Question } from "./providers.ts";
+import { agreement, ask, consensus, defaultModels, enabled, loadInput, MIME, misrouted, providerStatus, resolveModels, routes, type ModelResult, type Question } from "./providers.ts";
 
 const configured = [...routes.keys()];
 const defaults = defaultModels();
@@ -146,7 +146,7 @@ server.registerTool(
         return { model, enabled: enabled.includes(model), ok: false, error: (e as Error).message };
       }
     }));
-    const output = { providers: providerStatus, default: defaults, consensus, models: pings };
+    const output = { providers: providerStatus, default: defaults, consensus, models: pings, ...(Object.keys(misrouted).length ? { misrouted } : {}) };
     return { content: [{ type: "text", text: JSON.stringify(output, null, 2) }] };
   },
 );

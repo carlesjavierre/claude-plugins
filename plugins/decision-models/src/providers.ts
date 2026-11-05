@@ -128,19 +128,32 @@ function allRoutes(): Map<string, Route[]> {
     add("custom", format, () => customUrl, ["DM_CUSTOM_API_KEY"], models, "the customApiKey option");
   }
 
-  const preferred = env("DM_PREFERRED_PROVIDER");
-  if (preferred && preferred !== "auto") {
-    for (const list of routes.values()) list.sort((a, b) => Number(b.provider === preferred) - Number(a.provider === preferred));
+  // A model pinned to a provider only ever goes there: a missing key is an error, never a silent detour elsewhere.
+  for (const [model, variable] of Object.entries(USE_OPTION)) {
+    const pinned = env(variable);
+    if (!pinned || NOT_PINNED.includes(pinned)) continue;
+    const list = routes.get(model)?.filter((r) => r.provider === pinned) ?? [];
+    if (list.length) {
+      routes.set(model, list);
+      continue;
+    }
+    routes.delete(model);
+    const configured = providerStatus.find((s) => s.provider === pinned)?.configured;
+    misrouted[model] = `${model} is set to go through ${pinned} ("Use ${USE_TITLE[model]}" option), which ${configured ? "doesn't serve it" : "has no key set"}.`;
   }
   return routes;
 }
 
-export const routes = allRoutes();
-
-// The "Use <model>" checkboxes limit what "ask all" (consensus, /opinion-all, cheapest) picks;
-// naming a model explicitly still works. Custom-gateway model names have no checkbox.
+// "Use <model>" is auto, off, or a provider to pin the model to. off only leaves it out of "ask all"
+// (consensus, /opinion-all, cheapest); naming it explicitly still works, routed as auto.
+// true/false are what 0.1.0's checkboxes saved. Custom-gateway model names have no option.
 const USE_OPTION: Record<string, string> = { jev: "DM_USE_JEV", clef: "DM_USE_CLEF", "clef-flash": "DM_USE_CLEF_FLASH", "gpt-6-luna": "DM_USE_GPT_6_LUNA" };
-export const enabled = [...routes.keys()].filter((m) => !["false", "0"].includes(process.env[USE_OPTION[m]]?.trim() ?? ""));
+const USE_TITLE: Record<string, string> = { jev: "Jev", clef: "Clef", "clef-flash": "Clef-flash", "gpt-6-luna": "GPT-6 Luna" };
+const OFF = ["off", "false", "0"];
+const NOT_PINNED = ["auto", "true", "1", ...OFF];
+export const misrouted: Record<string, string> = {};
+export const routes = allRoutes();
+export const enabled = [...routes.keys()].filter((m) => !OFF.includes(process.env[USE_OPTION[m]]?.trim() ?? ""));
 
 // Cheapest first, by input price at the time of writing.
 const CHEAPEST = ["jev", "clef-flash", "gpt-6-luna", "clef"];
@@ -163,14 +176,18 @@ export function defaultModels(): { models: string[]; note?: string } {
 const splitModels = (spec: string) => spec.split(",").map((s) => s.trim()).filter(Boolean);
 
 export function resolveModels(spec?: string): { models: string[]; note?: string } {
-  const resolved = !spec ? defaultModels() : spec.trim() === "all" ? { models: enabled } : { models: splitModels(spec) };
+  const resolved: { models: string[]; note?: string } = !spec ? defaultModels() : spec.trim() === "all" ? { models: enabled } : { models: splitModels(spec) };
   if (resolved.models.length === 0) {
     throw new Error(routes.size ? "Every configured model is switched off in the plugin options (Use <model>)." : "No decision model is configured. Set an API key in the plugin options.");
   }
   const unknown = resolved.models.filter((m) => !routes.has(m));
   if (unknown.length) {
-    throw new Error(`Not configured: ${unknown.join(", ")}. Available: ${[...routes.keys()].join(", ") || "none"}.`);
+    const reasons = unknown.map((m) => misrouted[m]).filter(Boolean).join(" ");
+    throw new Error(`Not configured: ${unknown.join(", ")}. ${reasons ? reasons + " " : ""}Available: ${[...routes.keys()].join(", ") || "none"}.`);
   }
+  // Asking all (or a consensus) would otherwise drop a misrouted model without a word.
+  const skipped = spec?.trim() === "all" || (!spec && consensus !== "off") ? Object.values(misrouted) : [];
+  if (skipped.length) resolved.note = [resolved.note, `Skipped: ${skipped.join(" ")}`].filter(Boolean).join(" ");
   return resolved;
 }
 
