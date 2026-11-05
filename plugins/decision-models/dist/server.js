@@ -36850,6 +36850,13 @@ function allRoutes() {
   const universal = () => `https://api.cloudflare.com/client/v4/accounts/${account}/ai/run`;
   add("cloudflare", "systemone", universal, cloudflareKey, { jev: "typesafe/jev-1.14.0" }, cloudflareNeeds, true);
   add("cloudflare", "openai", universal, cloudflareKey, { "gpt-6-luna": "openai/decisions" }, cloudflareNeeds, true);
+  add(
+    "opencode",
+    "systemone",
+    () => "https://opencode.ai/zen/v1/systemone",
+    ["DM_OPENCODE_API_KEY", "OPENCODE_API_KEY"],
+    { jev: "jev-1.13" }
+  );
   const customUrl = env("DM_CUSTOM_URL");
   if (customUrl) {
     const format = env("DM_CUSTOM_FORMAT") === "openai" ? "openai" : "systemone";
@@ -37016,6 +37023,9 @@ var servingHost = (json2) => {
 };
 async function ask(model, questions, loaded) {
   const route = routes.get(model)[0];
+  if (route.provider === "opencode" && loaded.images.length) {
+    throw new Error("OpenCode Zen's Jev takes text only. Set Use Jev to typesafe, openrouter or another provider to send images.");
+  }
   const { body, headers } = route.format === "openai" ? openAiBody(route, questions, loaded) : systemOneBody(route, questions, loaded);
   if (route.provider === "cloudflare" && cloudflareGateway) headers["cf-aig-gateway-id"] = cloudflareGateway;
   if (route.provider === "openrouter" && (openrouterSort === "latency" || openrouterSort === "price")) {

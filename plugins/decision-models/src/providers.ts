@@ -118,6 +118,10 @@ function allRoutes(): Map<string, Route[]> {
   add("cloudflare", "systemone", universal, cloudflareKey, { jev: "typesafe/jev-1.14.0" }, cloudflareNeeds, true);
   add("cloudflare", "openai", universal, cloudflareKey, { "gpt-6-luna": "openai/decisions" }, cloudflareNeeds, true);
 
+  // OpenCode Zen has only Jev 1.13 (no latest alias), text only; last of the gateways since it's the oldest Jev.
+  add("opencode", "systemone", () => "https://opencode.ai/zen/v1/systemone",
+    ["DM_OPENCODE_API_KEY", "OPENCODE_API_KEY"], { jev: "jev-1.13" });
+
   const customUrl = env("DM_CUSTOM_URL");
   if (customUrl) {
     const format: Format = env("DM_CUSTOM_FORMAT") === "openai" ? "openai" : "systemone";
@@ -328,6 +332,9 @@ const servingHost = (json: Raw) => {
 
 export async function ask(model: string, questions: Question[], loaded: Loaded): Promise<ModelResult> {
   const route = routes.get(model)![0];
+  if (route.provider === "opencode" && loaded.images.length) {
+    throw new Error("OpenCode Zen's Jev takes text only. Set Use Jev to typesafe, openrouter or another provider to send images.");
+  }
   const { body, headers } = route.format === "openai" ? openAiBody(route, questions, loaded) : systemOneBody(route, questions, loaded);
   if (route.provider === "cloudflare" && cloudflareGateway) headers["cf-aig-gateway-id"] = cloudflareGateway;
   if (route.provider === "openrouter" && (openrouterSort === "latency" || openrouterSort === "price")) {

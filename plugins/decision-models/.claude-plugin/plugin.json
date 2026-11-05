@@ -1,7 +1,7 @@
 {
   "name": "decision-models",
   "version": "0.2.0",
-  "description": "Ask cheap decision models (Jev, Clef, GPT-6 Luna) typed questions for calibrated yes/no, choice and score answers, alone or as a consensus. Direct API keys or gateways (OpenRouter, Vercel, custom).",
+  "description": "Ask cheap decision models (Jev, Clef, GPT-6 Luna) typed questions for calibrated yes/no, choice and score answers, alone or as a consensus. Direct API keys or gateways (OpenRouter, Vercel, OpenCode, custom).",
   "author": {
     "name": "Carles Javierre",
     "email": "info@carlesjavierre.com"
@@ -53,6 +53,7 @@
         "cloudflare",
         "openrouter",
         "vercel",
+        "opencode",
         "custom"
       ],
       "default": "auto"
@@ -151,6 +152,12 @@
       "sensitive": true,
       "description": "Empty: falls back to AI_GATEWAY_API_KEY."
     },
+    "opencodeApiKey": {
+      "type": "string",
+      "title": "OpenCode Zen API key (Jev)",
+      "sensitive": true,
+      "description": "Empty: falls back to OPENCODE_API_KEY. OpenCode Zen serves Jev 1.13, text only."
+    },
     "customUrl": {
       "type": "string",
       "title": "Custom gateway endpoint URL",
@@ -195,6 +202,7 @@
         "DM_OPENAI_API_KEY": "${user_config.openaiApiKey}",
         "DM_OPENROUTER_API_KEY": "${user_config.openrouterApiKey}",
         "DM_VERCEL_API_KEY": "${user_config.vercelApiKey}",
+        "DM_OPENCODE_API_KEY": "${user_config.opencodeApiKey}",
         "DM_CUSTOM_URL": "${user_config.customUrl}",
         "DM_CUSTOM_FORMAT": "${user_config.customFormat}",
         "DM_CUSTOM_API_KEY": "${user_config.customApiKey}",

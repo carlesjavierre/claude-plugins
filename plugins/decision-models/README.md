@@ -27,6 +27,7 @@ Requires Node.js 20 or later. Set at least one API key when prompted, or later w
 | `gpt-6-luna` | OpenAI | `openaiApiKey` / `OPENAI_API_KEY` | untested |
 | `gpt-6-luna` | Vercel AI Gateway | `vercelApiKey` / `AI_GATEWAY_API_KEY` | untested |
 | `jev` (as `typesafe/jev-1.14.0`), `gpt-6-luna` (as `openai/decisions`) | Cloudflare (third-party models) | same Cloudflare token + account ID; no TypeSafe/OpenAI key, billed from Unified billing credits | untested |
+| `jev` (as `jev-1.13`, text only) | OpenCode Zen | `opencodeApiKey` / `OPENCODE_API_KEY` | untested |
 | any | Custom gateway | `customUrl`, `customFormat`, `customApiKey`, `customModels` | untested |
 
 **Cloudflare**: one API token with **Account > Workers AI > Read** reaches all four models (a token with only AI Gateway permissions is refused). Clef and Clef-flash run on Workers AI; Jev and GPT-6 Luna run as third-party models, billed from AI Gateway Unified billing credits, so load credits first. Set `cloudflareGatewayId` to send every Cloudflare request through one of your AI Gateways (logging, caching, rate limits, Unified billing): same endpoint and token plus a `cf-aig-gateway-id` header. Cloudflare pins `typesafe/jev` to 1.13 and has no latest alias, so the plugin names `typesafe/jev-1.14.0` and needs a bump when a newer Jev ships there.
@@ -41,12 +42,12 @@ Each model has one **Use** option that decides whether it's asked and which prov
 
 | Option | Choices |
 |---|---|
-| Use Jev | `auto`, `off`, `typesafe`, `cloudflare`, `openrouter`, `vercel`, `custom` |
+| Use Jev | `auto`, `off`, `typesafe`, `cloudflare`, `openrouter`, `vercel`, `opencode`, `custom` |
 | Use Clef | `auto`, `off`, `cloudflare`, `openrouter`, `custom` |
 | Use Clef-flash | `auto`, `off`, `cloudflare`, `openrouter`, `custom` |
 | Use GPT-6 Luna | `auto`, `off`, `openai`, `cloudflare`, `openrouter`, `vercel`, `custom` |
 
-- **`auto`** (the default): the vendor's own API when its key is set (TypeSafe for Jev, Cloudflare for Clef and Clef-flash, OpenAI for GPT-6 Luna), otherwise the first gateway with a key, in this order: OpenRouter, Vercel, Cloudflare (as a third-party model, for Jev and GPT-6 Luna), custom.
+- **`auto`** (the default): the vendor's own API when its key is set (TypeSafe for Jev, Cloudflare for Clef and Clef-flash, OpenAI for GPT-6 Luna), otherwise the first gateway with a key, in this order: OpenRouter, Vercel, Cloudflare (as a third-party model, for Jev and GPT-6 Luna), OpenCode Zen (Jev 1.13, the oldest Jev, so last), custom.
 - **A provider**: the model goes only there. This is how you mix routes, e.g. Clef through Cloudflare, GPT-6 Luna through OpenAI and Jev through TypeSafe, or two models on OpenRouter and the rest elsewhere. If that provider has no key (or, for `custom`, doesn't list the model in `customModels`), the model is never sent anywhere else: `/decision-models:setup` shows it as misrouted, naming it errors with the option to fix, and asking all models skips it with a note.
 - **`off`**: the model is left out whenever all models are asked (consensus, `/opinion-all`, `cheapest`). Naming it explicitly (`/opinion clef …`) still works, routed as `auto`. An OpenRouter key alone reaches all four models, so set the ones you don't want to `off`.
 
