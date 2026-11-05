@@ -7,5 +7,11 @@
   "metadata": {
     "description": "Carles Javierre's custom Claude Code plugins."
   },
-  "plugins": []
+  "plugins": [
+    {
+      "name": "decision-models",
+      "description": "Ask cheap decision models (Jev, Clef, GPT-6 Luna) typed questions for calibrated yes/no, choice and score answers, alone or as a consensus.",
+      "source": "./plugins/decision-models"
+    }
+  ]
 }

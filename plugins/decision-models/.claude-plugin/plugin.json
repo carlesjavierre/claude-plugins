@@ -1,0 +1,195 @@
+{
+  "name": "decision-models",
+  "version": "0.1.0",
+  "description": "Ask cheap decision models (Jev, Clef, GPT-6 Luna) typed questions for calibrated yes/no, choice and score answers, alone or as a consensus. Direct API keys or gateways (OpenRouter, Vercel, custom).",
+  "author": {
+    "name": "Carles Javierre",
+    "email": "info@carlesjavierre.com"
+  },
+  "repository": "https://github.com/carlesjavierre/claude-plugins",
+  "license": "MIT",
+  "keywords": [
+    "jev",
+    "clef",
+    "decisions",
+    "typesafe",
+    "openai",
+    "cloudflare",
+    "mcp"
+  ],
+  "userConfig": {
+    "defaultModel": {
+      "type": "string",
+      "title": "Default model",
+      "description": "Model Claude and /opinion ask when consensus is off. cheapest: the cheapest configured model (jev, then clef-flash, gpt-6-luna, clef).",
+      "options": [
+        "cheapest",
+        "jev",
+        "clef",
+        "clef-flash",
+        "gpt-6-luna"
+      ],
+      "default": "cheapest"
+    },
+    "consensus": {
+      "type": "string",
+      "title": "Consensus",
+      "description": "off: ask only the default model. unanimous: ask every enabled model; an answer counts only if all that answered agree. majority: ask every enabled model; the answer of more than half of those that answered wins.",
+      "options": [
+        "off",
+        "unanimous",
+        "majority"
+      ],
+      "default": "off"
+    },
+    "useJev": {
+      "type": "boolean",
+      "title": "Use Jev",
+      "description": "Include Jev when asking all models (consensus, /opinion-all, cheapest). Naming it explicitly still works.",
+      "default": true
+    },
+    "useClef": {
+      "type": "boolean",
+      "title": "Use Clef",
+      "description": "Include Clef when asking all models (consensus, /opinion-all, cheapest). Naming it explicitly still works.",
+      "default": true
+    },
+    "useClefFlash": {
+      "type": "boolean",
+      "title": "Use Clef-flash",
+      "description": "Include Clef-flash when asking all models (consensus, /opinion-all, cheapest). Naming it explicitly still works.",
+      "default": true
+    },
+    "useGpt6Luna": {
+      "type": "boolean",
+      "title": "Use GPT-6 Luna",
+      "description": "Include GPT-6 Luna when asking all models (consensus, /opinion-all, cheapest). Naming it explicitly still works.",
+      "default": true
+    },
+    "typesafeApiKey": {
+      "type": "string",
+      "title": "TypeSafe API key (Jev)",
+      "sensitive": true,
+      "description": "Empty: falls back to TYPESAFE_API_KEY."
+    },
+    "cloudflareAccountId": {
+      "type": "string",
+      "title": "Cloudflare account ID",
+      "description": "Masked and kept in your keychain; /decision-models:setup shows only its last 4 characters. Empty: falls back to CLOUDFLARE_ACCOUNT_ID.",
+      "sensitive": true
+    },
+    "cloudflareApiToken": {
+      "type": "string",
+      "title": "Cloudflare API token (Clef, Clef-flash, Jev, GPT-6 Luna)",
+      "sensitive": true,
+      "description": "A Cloudflare API token with Account > Workers AI > Read (an AI Gateway-only token is refused). Clef and Clef-flash run on Workers AI; Jev and GPT-6 Luna run through Cloudflare with no TypeSafe or OpenAI key, billed from AI Gateway Unified billing credits, which must be loaded. Empty: falls back to CLOUDFLARE_API_TOKEN."
+    },
+    "cloudflareGatewayId": {
+      "type": "string",
+      "title": "Cloudflare AI Gateway ID",
+      "description": "Send every Cloudflare request (all four models) through this AI Gateway, for logging, caching, rate limits or Unified billing. Same token; adds the cf-aig-gateway-id header. Empty: Cloudflare default routing.",
+      "default": ""
+    },
+    "openaiApiKey": {
+      "type": "string",
+      "title": "OpenAI API key (GPT-6 Luna)",
+      "sensitive": true,
+      "description": "Empty: falls back to OPENAI_API_KEY."
+    },
+    "openrouterApiKey": {
+      "type": "string",
+      "title": "OpenRouter API key (Jev, Clef, Clef-flash, GPT-6 Luna)",
+      "sensitive": true,
+      "description": "Empty: falls back to OPENROUTER_API_KEY."
+    },
+    "openrouterSort": {
+      "type": "string",
+      "title": "OpenRouter routing",
+      "description": "Which host OpenRouter prefers when several serve a model (Clef-flash has four). default: your OpenRouter account routing. latency: fastest host. price: cheapest host.",
+      "options": [
+        "default",
+        "latency",
+        "price"
+      ],
+      "default": "default"
+    },
+    "vercelApiKey": {
+      "type": "string",
+      "title": "Vercel AI Gateway key (Jev, GPT-6 Luna)",
+      "sensitive": true,
+      "description": "Empty: falls back to AI_GATEWAY_API_KEY."
+    },
+    "preferredProvider": {
+      "type": "string",
+      "title": "Preferred provider",
+      "description": "When a model is reachable through several providers, use this one first. auto: vendors directly, then gateways.",
+      "options": [
+        "auto",
+        "typesafe",
+        "cloudflare",
+        "openai",
+        "openrouter",
+        "vercel",
+        "custom"
+      ],
+      "default": "auto"
+    },
+    "customUrl": {
+      "type": "string",
+      "title": "Custom gateway endpoint URL",
+      "description": "Full URL of another gateway's decision endpoint.",
+      "default": ""
+    },
+    "customFormat": {
+      "type": "string",
+      "title": "Custom gateway format",
+      "description": "systemone: the Jev/Clef request shape. openai: the OpenAI Decisions shape.",
+      "options": [
+        "systemone",
+        "openai"
+      ],
+      "default": "systemone"
+    },
+    "customApiKey": {
+      "type": "string",
+      "title": "Custom gateway API key",
+      "sensitive": true,
+      "description": "Sent as a Bearer token."
+    },
+    "customModels": {
+      "type": "string",
+      "title": "Custom gateway models",
+      "description": "Model names and the gateway's IDs for them, e.g. jev=typesafe/jev,clef=cloudflare/clef.",
+      "default": ""
+    }
+  },
+  "mcpServers": {
+    "decision-models": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/dist/server.js"
+      ],
+      "env": {
+        "DM_DEFAULT_MODEL": "${user_config.defaultModel}",
+        "DM_CONSENSUS": "${user_config.consensus}",
+        "DM_TYPESAFE_API_KEY": "${user_config.typesafeApiKey}",
+        "DM_CLOUDFLARE_ACCOUNT_ID": "${user_config.cloudflareAccountId}",
+        "DM_CLOUDFLARE_API_TOKEN": "${user_config.cloudflareApiToken}",
+        "DM_OPENAI_API_KEY": "${user_config.openaiApiKey}",
+        "DM_OPENROUTER_API_KEY": "${user_config.openrouterApiKey}",
+        "DM_VERCEL_API_KEY": "${user_config.vercelApiKey}",
+        "DM_PREFERRED_PROVIDER": "${user_config.preferredProvider}",
+        "DM_CUSTOM_URL": "${user_config.customUrl}",
+        "DM_CUSTOM_FORMAT": "${user_config.customFormat}",
+        "DM_CUSTOM_API_KEY": "${user_config.customApiKey}",
+        "DM_CUSTOM_MODELS": "${user_config.customModels}",
+        "DM_USE_JEV": "${user_config.useJev}",
+        "DM_USE_CLEF": "${user_config.useClef}",
+        "DM_USE_CLEF_FLASH": "${user_config.useClefFlash}",
+        "DM_USE_GPT_6_LUNA": "${user_config.useGpt6Luna}",
+        "DM_CLOUDFLARE_GATEWAY_ID": "${user_config.cloudflareGatewayId}",
+        "DM_OPENROUTER_SORT": "${user_config.openrouterSort}"
+      }
+    }
+  }
+}

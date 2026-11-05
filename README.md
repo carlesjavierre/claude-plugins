@@ -21,7 +21,11 @@ Each plugin is versioned independently. To hear about new versions, watch this r
 
 ## Plugins
 
-_None yet._
+- [**decision-models**](plugins/decision-models): ask cheap decision models (Jev, Clef, GPT-6 Luna) typed questions for calibrated yes/no, choice and score answers, alone or as a consensus. Adds `/opinion`, `/opinion-all`, `/decision-models:setup` and `/decision-models:stats`.
+
+  ```
+  /plugin install decision-models --marketplace carlesjavierre/claude-plugins
+  ```
 
 ## License
 
