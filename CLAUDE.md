@@ -18,6 +18,8 @@ A Claude Code plugin marketplace named `carlesjavierre`. Users install with `/pl
 ## Before pushing
 
 ```
-claude plugin validate .
+claude plugin validate --strict .
 claude plugin validate --strict plugins/<name>
 ```
+
+A plugin with a `package.json` (an MCP server) ships its bundled `dist/` in git, since Claude Code doesn't install dependencies. Run `npm run build` there and commit `dist/` with the source; CI fails if they differ.

@@ -19,11 +19,20 @@ jobs:
       - name: Validate
         run: |
           npm install -g @anthropic-ai/claude-code
-          claude plugin validate .
+          claude plugin validate --strict .
           shopt -s nullglob
           for dir in plugins/*/; do
             claude plugin validate --strict "$dir"
           done
+
+      # Plugins with an MCP server ship a committed bundle; it must match the source.
+      - name: Check bundles are up to date
+        run: |
+          shopt -s nullglob
+          for pkg in plugins/*/package.json; do
+            (cd "$(dirname "$pkg")" && npm ci && npm run typecheck && npm run build)
+          done
+          git diff --exit-code -- plugins
 
       # Claude Code only refreshes a cached plugin when its version changes,
       # so an unbumped change never reaches users.
