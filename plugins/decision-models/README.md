@@ -78,7 +78,7 @@ Answers match when they land on the same side of 0.5 (yes/no), the same option o
 
 - `/opinion` asks the default model, or the model or set named first.
 - `/opinion-all` asks every configured model.
-- `/decision-models:stats` shows usage per model and provider (calls, errors, p50/p95 latency, input tokens, cost, how often multi-model questions agreed) for today, the last 7 days and all time. Cost is the actual charge where the provider reports it (OpenRouter and Vercel, which also name the host that served each call), otherwise an estimate (TypeSafe, Cloudflare and OpenAI report tokens only) from public input prices as of 2026-11-01 (jev $0.042, clef $0.24, clef-flash $0.038, gpt-6-luna $0.10 per 1M input tokens; output is free), marked `est.`; a custom-gateway model with no known price shows `unknown` and marks the total incomplete. Only numbers are logged, to `calls.jsonl` in the plugin's data folder (`~/.claude/plugins/data/…`, removed on uninstall), never question text or inputs.
+- `/decision-models:stats` shows usage since install: per model and provider (calls, errors, p50/p95 latency, input tokens, cost, how often multi-model questions agreed) per source (the `ask` tool, or each automatic check) and per project folder, then the last 7 days by day, source and project. `/decision-models:stats clear` deletes the recorded calls and starts over. Cost is the actual charge where the provider reports it (OpenRouter and Vercel, which also name the host that served each call), otherwise an estimate (TypeSafe, Cloudflare and OpenAI report tokens only) from public input prices as of 2026-11-01 (jev $0.042, clef $0.24, clef-flash $0.038, gpt-6-luna $0.10 per 1M input tokens; output is free), marked `est.`; a custom-gateway model with no known price shows `unknown` and marks the total incomplete. Only numbers and the project folder Claude Code was started in are logged, to `calls.jsonl` in the plugin's data folder (`~/.claude/plugins/data/…`, removed on uninstall), never question text or inputs.
 - `/decision-models:setup` shows which providers are configured and where each key comes from (never the key), tests every configured model, and shows the default.
 - All four run on Haiku, not your session's model, to keep them fast and cheap.
 - The question type (yes/no, choice, score) is inferred from your wording. Override it with a `yes_no:`, `choice: … —` or `score: … —` prefix (score levels lowest first).
@@ -91,15 +91,15 @@ For bulk work, the `ask` tool takes `items`: up to 500 file or image paths judge
 
 ## Automatic checks
 
-Claude rarely reaches for the `ask` tool on its own, so the plugin also runs the decision models itself at three points, each with its own toggle in the plugin options. Their calls show up in `/decision-models:stats` like any other.
+Claude rarely reaches for the `ask` tool on its own, so the plugin also runs a decision model itself at three points. Each has its own option: `off`, `cheapest` (the cheapest configured model) or a model name. Their calls show up in `/decision-models:stats` like any other.
 
 | Option | Default | When it runs | What Claude gets |
 |---|---|---|---|
-| **Check commits** | on | After a Bash command runs `git commit` and creates a commit (two or more files) | If a file is unrelated to the commit message (p ≥ 0.8), a note naming it, so Claude splits it into its own commit. Up to 30 files, one call each. |
-| **Triage long output** | on | After a Grep, Glob or Bash result of 40 lines or more | A note listing the lines that matter for your latest prompt (p ≥ 0.8). Claude still sees the full output. Up to 320 lines, 32 per call. |
+| **Check commits** | cheapest | After a Bash command runs `git commit` and creates a commit (two or more files) | If a file is unrelated to the commit message (p ≥ 0.8), a note naming it, so Claude splits it into its own commit. Up to 30 files, one call each. |
+| **Triage long output** | cheapest | After a Grep, Glob or Bash result of 40 lines or more | A note listing the lines that matter for your latest prompt (p ≥ 0.8). Claude still sees the full output. Up to 320 lines, 32 per call. |
 | **Catch early stops** | off | When Claude ends its turn | If it stopped partway through (said there was more to do, didn't ask you anything), it's told to continue or say plainly that it's done. Never twice in a row. |
 
-They use the default model and consensus setting, and do nothing when no API key is set.
+Each asks only the model its option names and ignores the consensus setting, since they run often. They do nothing when no API key is set.
 
 **Write paths without `@`.** `@file` attaches the whole file to Claude's prompt before the model sees it, which spends the tokens this plugin exists to save. A bare path is read by the server and never enters Claude's context.
 

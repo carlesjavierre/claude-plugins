@@ -36763,13 +36763,14 @@ var misrouted = {};
 var routes = allRoutes();
 var enabled = [...routes.keys()].filter((m) => !OFF.includes(process.env[USE_OPTION[m]]?.trim() ?? ""));
 var CHEAPEST = ["jev", "clef-flash", "gpt-6-luna", "clef"];
+var cheapest = () => CHEAPEST.find((m) => enabled.includes(m)) ?? enabled[0];
 var consensus = env("DM_CONSENSUS") ?? "off";
 var agreement = consensus === "majority" ? "majority" : "unanimous";
 function defaultModels() {
   if (consensus !== "off") return { models: enabled };
   const configured2 = env("DM_DEFAULT_MODEL");
   if (configured2 && configured2 !== "cheapest") return { models: [configured2] };
-  const fallback = CHEAPEST.find((m) => enabled.includes(m)) ?? enabled[0];
+  const fallback = cheapest();
   if (!fallback) return { models: [] };
   return { models: [fallback], note: `Default model is "cheapest": using ${fallback}.` };
 }
@@ -36933,7 +36934,8 @@ async function ask(model, questions, loaded) {
 }
 
 // src/stats.ts
-import { appendFile, mkdir, readFile as readFile2 } from "node:fs/promises";
+import { appendFile, mkdir, readFile as readFile2, rm } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
 var raw = process.env.CLAUDE_PLUGIN_DATA;
 var dir = raw && !raw.includes("${") ? raw : void 0;
@@ -36942,7 +36944,7 @@ async function record2(entry) {
   if (!file2) return;
   try {
     await mkdir(dir, { recursive: true });
-    await appendFile(file2, JSON.stringify(entry) + "\n");
+    await appendFile(file2, JSON.stringify({ ...entry, project: process.env.CLAUDE_PROJECT_DIR ?? process.cwd() }) + "\n");
   } catch {
   }
 }
@@ -37012,15 +37014,38 @@ async function stats() {
       return [];
     }
   });
-  const midnight = /* @__PURE__ */ new Date();
-  midnight.setHours(0, 0, 0, 0);
-  const weekAgo = Date.now() - 7 * 24 * 3600 * 1e3;
+  if (!all.length) return { calls: 0, note: "No calls recorded yet." };
+  const brief = (calls) => {
+    const { questions, cost_usd, cost_estimated } = summarize(calls);
+    return { calls: calls.length, questions, cost_usd, cost_estimated };
+  };
+  const group = (calls, key) => {
+    const m = /* @__PURE__ */ new Map();
+    for (const c of calls) m.set(key(c), [...m.get(key(c)) ?? [], c]);
+    return [...m];
+  };
+  const bySource = (calls) => Object.fromEntries(group(calls, (c) => c.source ?? "untagged").map(([s, cs]) => [s, brief(cs)]));
+  const home = homedir();
+  const project = (c) => !c.project ? "unknown" : c.project.startsWith(home) ? "~" + c.project.slice(home.length) : c.project;
+  const byProject = (calls) => Object.fromEntries(group(calls, project).map(([p, cs]) => [p, { ...brief(cs), by_source: bySource(cs) }]));
+  const day = (c) => new Date(c.t).toLocaleDateString("sv-SE");
+  const weekStart = /* @__PURE__ */ new Date();
+  weekStart.setHours(0, 0, 0, 0);
+  weekStart.setDate(weekStart.getDate() - 6);
+  const weekCalls = all.filter((c) => new Date(c.t) >= weekStart);
   return {
     prices_as_of: PRICES_AS_OF,
-    today: summarize(all.filter((c) => new Date(c.t) >= midnight)),
-    last_7_days: summarize(all.filter((c) => Date.parse(c.t) >= weekAgo)),
-    all_time: summarize(all)
+    since: all[0].t,
+    all_time: { ...summarize(all), by_source: bySource(all), by_project: byProject(all) },
+    last_7_days: group(weekCalls, day).map(([date5, calls]) => ({ date: date5, ...brief(calls), by_source: bySource(calls) })),
+    last_7_days_by_project: byProject(weekCalls)
   };
+}
+async function clearStats() {
+  if (!file2) return { error: "No plugin data folder (CLAUDE_PLUGIN_DATA is unset), so nothing is recorded." };
+  const calls = await readFile2(file2, "utf8").then((t) => t.split("\n").filter(Boolean).length, () => 0);
+  await rm(file2, { force: true });
+  return { cleared_calls: calls };
 }
 
 // src/consensus.ts
@@ -37055,7 +37080,7 @@ function combine(questions, results, errors, rule) {
     })
   };
 }
-async function judge(chosen, questions, loaded) {
+async function judge(chosen, questions, loaded, source) {
   const settled = await Promise.allSettled(chosen.map((m) => ask(m, questions, loaded)));
   const results = [];
   const errors = {};
@@ -37064,6 +37089,7 @@ async function judge(chosen, questions, loaded) {
   await record2({
     t: (/* @__PURE__ */ new Date()).toISOString(),
     questions: questions.length,
+    source,
     models: settled.map((s, i) => s.status === "fulfilled" ? { model: chosen[i], provider: s.value.provider, host: s.value.host, ok: true, latency_ms: s.value.latency_ms, input_tokens: s.value.input_tokens, cost_usd: s.value.cost_usd } : { model: chosen[i], provider: routes.get(chosen[i])[0].provider, ok: false }),
     ...results.length > 1 ? { agreed: output2.results.map((r) => r.agreed) } : {}
   });
@@ -37122,7 +37148,7 @@ server.registerTool(
       if (items) return json2({ models: chosen, ...note ? { note } : {}, ...await batch(chosen, questions, items, text) });
       const subject = text || files?.length || images?.length ? text : questions.map((q) => q.question).join("\n");
       const loaded = await loadInput({ text: subject, files, images });
-      return json2({ models: chosen, ...note ? { note } : {}, ...await judge(chosen, questions, loaded) });
+      return json2({ models: chosen, ...note ? { note } : {}, ...await judge(chosen, questions, loaded, "ask") });
     } catch (e) {
       return { isError: true, content: [{ type: "text", text: e.message }] };
     }
@@ -37141,7 +37167,7 @@ async function batch(chosen, questions, items, framing) {
       try {
         const isImage = extname2(item).toLowerCase() in MIME;
         const loaded = await loadInput({ text: framing, ...isImage ? { images: [item] } : { files: [item] } });
-        const out = await judge(chosen, questions, loaded);
+        const out = await judge(chosen, questions, loaded, "ask");
         const row = out.partial ? { partial: true } : {};
         out.results.forEach((r, i) => {
           const per = r.per_model;
@@ -37191,9 +37217,17 @@ server.registerTool(
 server.registerTool(
   "stats",
   {
-    description: "Usage stats of the ask tool, per model and provider: calls, errors, p50/p95 latency, input tokens, and how often multi-model questions agreed. For today, the last 7 days and all time. Setup pings are not counted.",
+    description: "Usage stats of the decision models. All time (since install or the last clear): per model and provider calls, errors, p50/p95 latency, input tokens, cost and agreement, plus calls, questions and cost per source. Last 7 days: the same per-source numbers for each day. Sources: ask (this tool, from Claude or /opinion), commit, triage, early-stop (the automatic checks), untagged (logged before sources were recorded). Setup pings are not counted.",
     annotations: { readOnlyHint: true }
   },
   async () => ({ content: [{ type: "text", text: JSON.stringify(await stats(), null, 2) }] })
+);
+server.registerTool(
+  "clear_stats",
+  {
+    description: "Delete every recorded call, resetting the usage stats. Only when the user asks to clear the stats.",
+    annotations: { destructiveHint: true }
+  },
+  async () => ({ content: [{ type: "text", text: JSON.stringify(await clearStats(), null, 2) }] })
 );
 await server.connect(new StdioServerTransport());

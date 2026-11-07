@@ -20,6 +20,7 @@ __export(providers_exports, {
   MIME: () => MIME,
   agreement: () => agreement,
   ask: () => ask,
+  cheapest: () => cheapest,
   consensus: () => consensus,
   defaultModels: () => defaultModels,
   enabled: () => enabled,
@@ -122,7 +123,7 @@ function defaultModels() {
   if (consensus !== "off") return { models: enabled };
   const configured = env("DM_DEFAULT_MODEL");
   if (configured && configured !== "cheapest") return { models: [configured] };
-  const fallback = CHEAPEST.find((m) => enabled.includes(m)) ?? enabled[0];
+  const fallback = cheapest();
   if (!fallback) return { models: [] };
   return { models: [fallback], note: `Default model is "cheapest": using ${fallback}.` };
 }
@@ -264,7 +265,7 @@ async function ask(model, questions, loaded) {
     answers: parseAnswers(route.format, json, questions)
   };
 }
-var env, sourceOf, cloudflareGateway, openrouterSort, providerStatus, USE_OPTION, USE_TITLE, OFF, NOT_PINNED, misrouted, routes, enabled, CHEAPEST, consensus, agreement, splitModels, MIME, parseOption, fitsQuestion, OTHER, choiceOptions, actualCost, servingHost;
+var env, sourceOf, cloudflareGateway, openrouterSort, providerStatus, USE_OPTION, USE_TITLE, OFF, NOT_PINNED, misrouted, routes, enabled, CHEAPEST, cheapest, consensus, agreement, splitModels, MIME, parseOption, fitsQuestion, OTHER, choiceOptions, actualCost, servingHost;
 var init_providers = __esm({
   "src/providers.ts"() {
     "use strict";
@@ -284,6 +285,7 @@ var init_providers = __esm({
     routes = allRoutes();
     enabled = [...routes.keys()].filter((m) => !OFF.includes(process.env[USE_OPTION[m]]?.trim() ?? ""));
     CHEAPEST = ["jev", "clef-flash", "gpt-6-luna", "clef"];
+    cheapest = () => CHEAPEST.find((m) => enabled.includes(m)) ?? enabled[0];
     consensus = env("DM_CONSENSUS") ?? "off";
     agreement = consensus === "majority" ? "majority" : "unanimous";
     splitModels = (spec) => spec.split(",").map((s) => s.trim()).filter(Boolean);
@@ -310,13 +312,13 @@ var init_providers = __esm({
 });
 
 // src/stats.ts
-import { appendFile, mkdir, readFile as readFile2 } from "node:fs/promises";
+import { appendFile, mkdir, readFile as readFile2, rm } from "node:fs/promises";
 import { join } from "node:path";
 async function record(entry) {
   if (!file) return;
   try {
     await mkdir(dir, { recursive: true });
-    await appendFile(file, JSON.stringify(entry) + "\n");
+    await appendFile(file, JSON.stringify({ ...entry, project: process.env.CLAUDE_PROJECT_DIR ?? process.cwd() }) + "\n");
   } catch {
   }
 }
@@ -366,7 +368,7 @@ function combine(questions, results, errors, rule) {
     })
   };
 }
-async function judge(chosen, questions, loaded) {
+async function judge(chosen, questions, loaded, source) {
   const settled = await Promise.allSettled(chosen.map((m) => ask(m, questions, loaded)));
   const results = [];
   const errors = {};
@@ -375,6 +377,7 @@ async function judge(chosen, questions, loaded) {
   await record({
     t: (/* @__PURE__ */ new Date()).toISOString(),
     questions: questions.length,
+    source,
     models: settled.map((s, i) => s.status === "fulfilled" ? { model: chosen[i], provider: s.value.provider, host: s.value.host, ok: true, latency_ms: s.value.latency_ms, input_tokens: s.value.input_tokens, cost_usd: s.value.cost_usd } : { model: chosen[i], provider: routes.get(chosen[i])[0].provider, ok: false }),
     ...results.length > 1 ? { agreed: output.results.map((r) => r.agreed) } : {}
   });
@@ -403,7 +406,7 @@ for (const [name, value] of Object.entries(manifest.mcpServers["decision-models"
   if (v) process.env[name] = v;
 }
 var { judge: judge2 } = await Promise.resolve().then(() => (init_consensus(), consensus_exports));
-var { loadInput: loadInput2, resolveModels: resolveModels2, routes: routes2 } = await Promise.resolve().then(() => (init_providers(), providers_exports));
+var { cheapest: cheapest2, loadInput: loadInput2, resolveModels: resolveModels2, routes: routes2 } = await Promise.resolve().then(() => (init_providers(), providers_exports));
 var SURE = 0.8;
 var sure = (r) => r.answer === "yes" && r.mean_probability >= SURE;
 function lastPrompt(transcript) {
@@ -423,7 +426,7 @@ function lastPrompt(transcript) {
 }
 var MAX_FILES = 30;
 var MAX_DIFF = 12e3;
-async function checkCommit(input) {
+async function checkCommit(input, models) {
   const git = (...args) => execFileSync("git", args, { cwd: input.cwd, encoding: "utf8", maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "ignore"] });
   let sha, time;
   try {
@@ -435,7 +438,6 @@ async function checkCommit(input) {
   const files = git("show", "--name-only", "--format=", sha).split("\n").filter(Boolean);
   if (files.length < 2) return;
   const message = git("log", "-1", "--format=%B", sha).trim();
-  const { models } = resolveModels2();
   const verdicts = await Promise.all(files.slice(0, MAX_FILES).map(async (file2) => {
     const diff = git("show", "--format=", sha, "--", file2).slice(0, MAX_DIFF);
     const loaded = await loadInput2({ text: `Commit message:
@@ -443,7 +445,7 @@ ${message}
 
 Change to ${file2}:
 ${diff}` });
-    const out = await judge2(models, [{ type: "yes_no", question: "Is this file's change unrelated to what the commit message describes?" }], loaded);
+    const out = await judge2(models, [{ type: "yes_no", question: "Is this file's change unrelated to what the commit message describes?" }], loaded, "commit");
     return { file: file2, ...out.results[0] };
   }));
   const flagged = verdicts.filter(sure);
@@ -457,7 +459,7 @@ ${diff}` });
 var MIN_LINES = 40;
 var MAX_LINES = 320;
 var PER_CALL = 32;
-async function triageOutput(input) {
+async function triageOutput(input, models) {
   const r = input.tool_response;
   const text = typeof r === "string" ? r : [r?.stdout, r?.stderr, r?.content, r?.filenames?.join("\n")].filter(Boolean).join("\n");
   const lines = text.split("\n").filter((l) => l.trim());
@@ -469,9 +471,8 @@ async function triageOutput(input) {
 ${task}
 
 Claude ran ${input.tool_name}: ${JSON.stringify(input.tool_input).slice(0, 500)}` });
-  const { models } = resolveModels2();
   const chunks = Array.from({ length: Math.ceil(judged.length / PER_CALL) }, (_, i) => judged.slice(i * PER_CALL, (i + 1) * PER_CALL));
-  const outs = await Promise.all(chunks.map((chunk) => judge2(models, chunk.map((line) => ({ type: "yes_no", question: `Is this output line relevant to the user's task? Line: ${line.slice(0, 300)}` })), loaded)));
+  const outs = await Promise.all(chunks.map((chunk) => judge2(models, chunk.map((line) => ({ type: "yes_no", question: `Is this output line relevant to the user's task? Line: ${line.slice(0, 300)}` })), loaded, "triage")));
   const results = outs.flatMap((o) => o.results);
   const relevant = judged.filter((_, i) => sure(results[i]));
   const count = lines.length > judged.length ? `the first ${judged.length} of ${lines.length}` : `${judged.length}`;
@@ -485,7 +486,7 @@ ${shown}` : "."}`
     }
   };
 }
-async function catchEarlyStop(input) {
+async function catchEarlyStop(input, models) {
   if (input.stop_hook_active || !input.last_assistant_message) return;
   const task = lastPrompt(input.transcript_path);
   const loaded = await loadInput2({ text: `User's request:
@@ -494,20 +495,23 @@ ${task}
 Assistant's final message:
 ${String(input.last_assistant_message).slice(-4e3)}` });
   const question = "Did the assistant stop partway through the task: it says or implies there are steps it will still do, yet ended its turn without doing them and without asking the user anything?";
-  const r = (await judge2(resolveModels2().models, [{ type: "yes_no", question }], loaded)).results[0];
+  const r = (await judge2(models, [{ type: "yes_no", question }], loaded, "early-stop")).results[0];
   if (!sure(r)) return;
   return {
     decision: "block",
     reason: `decision-models: your last message reads as stopping partway through the task (p=${r.mean_probability}). If steps are left, continue with them now. If you're done or need the user, say so plainly.`
   };
 }
+function checkModels(key) {
+  const v = option(key);
+  if (!v || v === "off" || v === "false") return;
+  return resolveModels2(v === "cheapest" || v === "true" ? cheapest2() : v).models;
+}
 async function run(input) {
   if (!routes2.size) return;
-  if (input.hook_event_name === "Stop") return option("catchEarlyStops") === "true" ? catchEarlyStop(input) : void 0;
-  if (input.tool_name === "Bash" && /\bgit\b.*\bcommit\b/.test(input.tool_input?.command ?? "")) {
-    return option("checkCommits") === "true" ? checkCommit(input) : void 0;
-  }
-  if (option("triageOutput") === "true") return triageOutput(input);
+  const [check, key] = input.hook_event_name === "Stop" ? [catchEarlyStop, "catchEarlyStops"] : input.tool_name === "Bash" && /\bgit\b.*\bcommit\b/.test(input.tool_input?.command ?? "") ? [checkCommit, "checkCommits"] : [triageOutput, "triageOutput"];
+  const models = checkModels(key);
+  if (models) return check(input, models);
 }
 try {
   const out = await run(JSON.parse(readFileSync(0, "utf8")));

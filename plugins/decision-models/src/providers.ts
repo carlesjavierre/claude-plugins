@@ -161,6 +161,7 @@ export const enabled = [...routes.keys()].filter((m) => !OFF.includes(process.en
 
 // Cheapest first, by input price at the time of writing.
 const CHEAPEST = ["jev", "clef-flash", "gpt-6-luna", "clef"];
+export const cheapest = () => CHEAPEST.find((m) => enabled.includes(m)) ?? enabled[0];
 
 export type Agreement = "unanimous" | "majority";
 
@@ -172,7 +173,7 @@ export function defaultModels(): { models: string[]; note?: string } {
   if (consensus !== "off") return { models: enabled };
   const configured = env("DM_DEFAULT_MODEL");
   if (configured && configured !== "cheapest") return { models: [configured] };
-  const fallback = CHEAPEST.find((m) => enabled.includes(m)) ?? enabled[0];
+  const fallback = cheapest();
   if (!fallback) return { models: [] };
   return { models: [fallback], note: `Default model is "cheapest": using ${fallback}.` };
 }

@@ -3,7 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { extname } from "node:path";
 import { judge, mean } from "./consensus.ts";
-import { stats } from "./stats.ts";
+import { clearStats, stats } from "./stats.ts";
 import { agreement, ask, consensus, defaultModels, enabled, loadInput, MIME, misrouted, providerStatus, resolveModels, routes, type Question } from "./providers.ts";
 
 const configured = [...routes.keys()];
@@ -62,7 +62,7 @@ server.registerTool(
       // A question about general knowledge ("is the sky blue?") has no separate input: evaluate the question itself.
       const subject = text || files?.length || images?.length ? text : questions.map((q) => q.question).join("\n");
       const loaded = await loadInput({ text: subject, files, images });
-      return json({ models: chosen, ...(note ? { note } : {}), ...(await judge(chosen, questions as Question[], loaded)) });
+      return json({ models: chosen, ...(note ? { note } : {}), ...(await judge(chosen, questions as Question[], loaded, "ask")) });
     } catch (e) {
       return { isError: true, content: [{ type: "text", text: (e as Error).message }] };
     }
@@ -85,7 +85,7 @@ async function batch(chosen: string[], questions: Question[], items: string[], f
       try {
         const isImage = extname(item).toLowerCase() in MIME;
         const loaded = await loadInput({ text: framing, ...(isImage ? { images: [item] } : { files: [item] }) });
-        const out = await judge(chosen, questions, loaded);
+        const out = await judge(chosen, questions, loaded, "ask");
         const row: Record<string, unknown> = out.partial ? { partial: true } : {};
         out.results.forEach((r, i) => {
           const per = r.per_model as { probability?: number; confidence?: number }[];
@@ -137,10 +137,19 @@ server.registerTool(
 server.registerTool(
   "stats",
   {
-    description: "Usage stats of the ask tool, per model and provider: calls, errors, p50/p95 latency, input tokens, and how often multi-model questions agreed. For today, the last 7 days and all time. Setup pings are not counted.",
+    description: "Usage stats of the decision models. All time (since install or the last clear): per model and provider calls, errors, p50/p95 latency, input tokens, cost and agreement, plus calls, questions and cost per source. Last 7 days: the same per-source numbers for each day. Sources: ask (this tool, from Claude or /opinion), commit, triage, early-stop (the automatic checks), untagged (logged before sources were recorded). Setup pings are not counted.",
     annotations: { readOnlyHint: true },
   },
   async () => ({ content: [{ type: "text", text: JSON.stringify(await stats(), null, 2) }] }),
+);
+
+server.registerTool(
+  "clear_stats",
+  {
+    description: "Delete every recorded call, resetting the usage stats. Only when the user asks to clear the stats.",
+    annotations: { destructiveHint: true },
+  },
+  async () => ({ content: [{ type: "text", text: JSON.stringify(await clearStats(), null, 2) }] }),
 );
 
 await server.connect(new StdioServerTransport());

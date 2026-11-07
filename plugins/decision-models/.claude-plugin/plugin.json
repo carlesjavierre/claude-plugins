@@ -1,6 +1,6 @@
 {
   "name": "decision-models",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Ask cheap decision models (Jev, Clef, GPT-6 Luna) typed questions for calibrated yes/no, choice and score answers, alone or as a consensus. Direct API keys or gateways (OpenRouter, Vercel, OpenCode, custom).",
   "author": {
     "name": "Carles Javierre",
@@ -43,22 +43,46 @@
       "default": "off"
     },
     "checkCommits": {
-      "type": "boolean",
+      "type": "string",
       "title": "Check commits",
-      "description": "After Claude makes a git commit, ask the decision models whether each file in it belongs to the commit message. Files they're sure are unrelated (p >= 0.8) are sent back to Claude to split into their own commit. Skips one-file commits; judges up to 30 files, one call each.",
-      "default": true
+      "description": "After Claude makes a git commit, ask this model whether each file in it belongs to the commit message. Files it is sure are unrelated (p >= 0.8) are sent back to Claude to split into their own commit. Skips one-file commits; judges up to 30 files, one call each. Ignores the consensus setting. cheapest: the cheapest configured model.",
+      "default": "cheapest",
+      "options": [
+        "off",
+        "cheapest",
+        "jev",
+        "clef",
+        "clef-flash",
+        "gpt-6-luna"
+      ]
     },
     "triageOutput": {
-      "type": "boolean",
+      "type": "string",
       "title": "Triage long output",
-      "description": "When a Grep, Glob or Bash result has 40 or more lines, ask the decision models which lines matter for your latest prompt, and add the ones they're sure of (p >= 0.8) as a note next to the output. Claude still sees the full output. Judges up to 320 lines, 32 per call; adds a second or two to those tool calls.",
-      "default": true
+      "description": "When a Grep, Glob or Bash result has 40 or more lines, ask this model which lines matter for your latest prompt, and add the ones it is sure of (p >= 0.8) as a note next to the output. Claude still sees the full output. Judges up to 320 lines, 32 per call; adds a second or two to those tool calls. Ignores the consensus setting. cheapest: the cheapest configured model.",
+      "default": "cheapest",
+      "options": [
+        "off",
+        "cheapest",
+        "jev",
+        "clef",
+        "clef-flash",
+        "gpt-6-luna"
+      ]
     },
     "catchEarlyStops": {
-      "type": "boolean",
+      "type": "string",
       "title": "Catch early stops",
-      "description": "When Claude ends its turn, ask the decision models whether it stopped partway through your task: said there was more to do, then stopped without asking you anything. If they're sure (p >= 0.8), Claude is told to continue or say plainly that it's done. At most once per turn; one call per turn.",
-      "default": false
+      "description": "When Claude ends its turn, ask this model whether it stopped partway through your task: said there was more to do, then stopped without asking you anything. If it is sure (p >= 0.8), Claude is told to continue or say plainly that it is done. At most once per turn; one call per turn. Ignores the consensus setting. cheapest: the cheapest configured model.",
+      "default": "off",
+      "options": [
+        "off",
+        "cheapest",
+        "jev",
+        "clef",
+        "clef-flash",
+        "gpt-6-luna"
+      ]
     },
     "useJev": {
       "type": "string",

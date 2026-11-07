@@ -13,7 +13,7 @@ for (const [name, value] of Object.entries<string>(manifest.mcpServers["decision
   if (v) process.env[name] = v;
 }
 const { judge } = await import("./consensus.ts");
-const { loadInput, resolveModels, routes } = await import("./providers.ts");
+const { cheapest, loadInput, resolveModels, routes } = await import("./providers.ts");
 
 // Flag only what the models are sure of; the ask tool documents 0.2-0.8 as unsure.
 const SURE = 0.8;
@@ -43,7 +43,7 @@ function lastPrompt(transcript?: string): string {
 const MAX_FILES = 30;
 const MAX_DIFF = 12_000;
 
-async function checkCommit(input: HookInput) {
+async function checkCommit(input: HookInput, models: string[]) {
   const git = (...args: string[]) => execFileSync("git", args, { cwd: input.cwd, encoding: "utf8", maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "ignore"] });
   // Output filters (rtk and the like) drop git's "[branch sha]" line, so go by time instead: HEAD counts only
   // if it was committed while this command ran. A failed commit leaves an older HEAD, which is skipped.
@@ -57,11 +57,10 @@ async function checkCommit(input: HookInput) {
   const files = git("show", "--name-only", "--format=", sha).split("\n").filter(Boolean);
   if (files.length < 2) return;
   const message = git("log", "-1", "--format=%B", sha).trim();
-  const { models } = resolveModels();
   const verdicts = await Promise.all(files.slice(0, MAX_FILES).map(async (file) => {
     const diff = git("show", "--format=", sha, "--", file).slice(0, MAX_DIFF);
     const loaded = await loadInput({ text: `Commit message:\n${message}\n\nChange to ${file}:\n${diff}` });
-    const out = await judge(models, [{ type: "yes_no", question: "Is this file's change unrelated to what the commit message describes?" }], loaded);
+    const out = await judge(models, [{ type: "yes_no", question: "Is this file's change unrelated to what the commit message describes?" }], loaded, "commit");
     return { file, ...out.results[0] };
   }));
   const flagged = verdicts.filter(sure);
@@ -78,7 +77,7 @@ const MIN_LINES = 40;
 const MAX_LINES = 320;
 const PER_CALL = 32;
 
-async function triageOutput(input: HookInput) {
+async function triageOutput(input: HookInput, models: string[]) {
   const r = input.tool_response;
   const text = typeof r === "string" ? r : [r?.stdout, r?.stderr, r?.content, r?.filenames?.join("\n")].filter(Boolean).join("\n");
   const lines = text.split("\n").filter((l: string) => l.trim());
@@ -87,10 +86,9 @@ async function triageOutput(input: HookInput) {
   if (!task) return;
   const judged: string[] = lines.slice(0, MAX_LINES);
   const loaded = await loadInput({ text: `The user's task:\n${task}\n\nClaude ran ${input.tool_name}: ${JSON.stringify(input.tool_input).slice(0, 500)}` });
-  const { models } = resolveModels();
   const chunks = Array.from({ length: Math.ceil(judged.length / PER_CALL) }, (_, i) => judged.slice(i * PER_CALL, (i + 1) * PER_CALL));
   const outs = await Promise.all(chunks.map((chunk) =>
-    judge(models, chunk.map((line) => ({ type: "yes_no" as const, question: `Is this output line relevant to the user's task? Line: ${line.slice(0, 300)}` })), loaded)));
+    judge(models, chunk.map((line) => ({ type: "yes_no" as const, question: `Is this output line relevant to the user's task? Line: ${line.slice(0, 300)}` })), loaded, "triage")));
   const results = outs.flatMap((o) => o.results);
   const relevant = judged.filter((_, i) => sure(results[i]));
   const count = lines.length > judged.length ? `the first ${judged.length} of ${lines.length}` : `${judged.length}`;
@@ -103,13 +101,13 @@ async function triageOutput(input: HookInput) {
   };
 }
 
-async function catchEarlyStop(input: HookInput) {
+async function catchEarlyStop(input: HookInput, models: string[]) {
   // stop_hook_active: Claude is already continuing because of a stop hook; judging again could loop.
   if (input.stop_hook_active || !input.last_assistant_message) return;
   const task = lastPrompt(input.transcript_path);
   const loaded = await loadInput({ text: `User's request:\n${task}\n\nAssistant's final message:\n${String(input.last_assistant_message).slice(-4000)}` });
   const question = "Did the assistant stop partway through the task: it says or implies there are steps it will still do, yet ended its turn without doing them and without asking the user anything?";
-  const r = (await judge(resolveModels().models, [{ type: "yes_no", question }], loaded)).results[0];
+  const r = (await judge(models, [{ type: "yes_no", question }], loaded, "early-stop")).results[0];
   if (!sure(r)) return;
   return {
     decision: "block",
@@ -117,13 +115,21 @@ async function catchEarlyStop(input: HookInput) {
   };
 }
 
+// Each check asks the one model its option names, never the consensus: they run often and are cheap guesses.
+// "true"/"false" are the boolean values these options had before 0.4.0.
+function checkModels(key: string): string[] | undefined {
+  const v = option(key);
+  if (!v || v === "off" || v === "false") return;
+  return resolveModels(v === "cheapest" || v === "true" ? cheapest() : v).models;
+}
+
 async function run(input: HookInput) {
   if (!routes.size) return; // No API key set: nothing to judge with.
-  if (input.hook_event_name === "Stop") return option("catchEarlyStops") === "true" ? catchEarlyStop(input) : undefined;
-  if (input.tool_name === "Bash" && /\bgit\b.*\bcommit\b/.test(input.tool_input?.command ?? "")) {
-    return option("checkCommits") === "true" ? checkCommit(input) : undefined;
-  }
-  if (option("triageOutput") === "true") return triageOutput(input);
+  const [check, key] = input.hook_event_name === "Stop" ? [catchEarlyStop, "catchEarlyStops"]
+    : input.tool_name === "Bash" && /\bgit\b.*\bcommit\b/.test(input.tool_input?.command ?? "") ? [checkCommit, "checkCommits"]
+    : [triageOutput, "triageOutput"];
+  const models = checkModels(key);
+  if (models) return check(input, models);
 }
 
 try {

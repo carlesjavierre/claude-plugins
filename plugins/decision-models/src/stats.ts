@@ -1,10 +1,15 @@
-import { appendFile, mkdir, readFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rm } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
 
-// Numbers only: no question text, inputs or error messages are logged.
+// Numbers and the project folder only: no question text, inputs or error messages are logged.
+export type Source = "ask" | "commit" | "triage" | "early-stop";
+
 export interface CallRecord {
   t: string;
   questions: number;
+  source?: Source; // source and project are missing on calls logged before 0.4.0.
+  project?: string;
   models: { model: string; provider: string; host?: string; ok: boolean; latency_ms?: number; input_tokens?: number; cost_usd?: number }[];
   agreed?: boolean[];
 }
@@ -19,7 +24,8 @@ export async function record(entry: CallRecord) {
   if (!file) return;
   try {
     await mkdir(dir!, { recursive: true });
-    await appendFile(file, JSON.stringify(entry) + "\n");
+    // Claude Code sets CLAUDE_PROJECT_DIR (the session's project folder) for both the MCP server and hooks.
+    await appendFile(file, JSON.stringify({ ...entry, project: process.env.CLAUDE_PROJECT_DIR ?? process.cwd() }) + "\n");
   } catch {
     // Stats are best-effort; a full disk must not fail the user's question.
   }
@@ -90,13 +96,39 @@ export async function stats() {
       return [];
     }
   });
-  const midnight = new Date();
-  midnight.setHours(0, 0, 0, 0);
-  const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
+  if (!all.length) return { calls: 0, note: "No calls recorded yet." };
+  const brief = (calls: CallRecord[]) => {
+    const { questions, cost_usd, cost_estimated } = summarize(calls);
+    return { calls: calls.length, questions, cost_usd, cost_estimated };
+  };
+  // Map.groupBy needs Node 21; the bundle targets Node 20.
+  const group = (calls: CallRecord[], key: (c: CallRecord) => string) => {
+    const m = new Map<string, CallRecord[]>();
+    for (const c of calls) m.set(key(c), [...(m.get(key(c)) ?? []), c]);
+    return [...m];
+  };
+  const bySource = (calls: CallRecord[]) => Object.fromEntries(group(calls, (c) => c.source ?? "untagged").map(([s, cs]) => [s, brief(cs)]));
+  const home = homedir();
+  const project = (c: CallRecord) => (!c.project ? "unknown" : c.project.startsWith(home) ? "~" + c.project.slice(home.length) : c.project);
+  const byProject = (calls: CallRecord[]) => Object.fromEntries(group(calls, project).map(([p, cs]) => [p, { ...brief(cs), by_source: bySource(cs) }]));
+  const day = (c: CallRecord) => new Date(c.t).toLocaleDateString("sv-SE"); // YYYY-MM-DD, local time
+  // Today and the 6 calendar days before it.
+  const weekStart = new Date();
+  weekStart.setHours(0, 0, 0, 0);
+  weekStart.setDate(weekStart.getDate() - 6);
+  const weekCalls = all.filter((c) => new Date(c.t) >= weekStart);
   return {
     prices_as_of: PRICES_AS_OF,
-    today: summarize(all.filter((c) => new Date(c.t) >= midnight)),
-    last_7_days: summarize(all.filter((c) => Date.parse(c.t) >= weekAgo)),
-    all_time: summarize(all),
+    since: all[0].t,
+    all_time: { ...summarize(all), by_source: bySource(all), by_project: byProject(all) },
+    last_7_days: group(weekCalls, day).map(([date, calls]) => ({ date, ...brief(calls), by_source: bySource(calls) })),
+    last_7_days_by_project: byProject(weekCalls),
   };
+}
+
+export async function clearStats() {
+  if (!file) return { error: "No plugin data folder (CLAUDE_PLUGIN_DATA is unset), so nothing is recorded." };
+  const calls = await readFile(file, "utf8").then((t) => t.split("\n").filter(Boolean).length, () => 0);
+  await rm(file, { force: true });
+  return { cleared_calls: calls };
 }
