@@ -89,6 +89,18 @@ A short note at session start (and after `/clear` or compaction) tells Claude to
 
 For bulk work, the `ask` tool takes `items`: up to 500 file or image paths judged separately with the same questions in one call, returning counts per answer and the uncertain items. Write **jevify** anywhere in a prompt ("jevify the files in the last commit: which are unrelated to its subject?") to make Claude run the full bulk workflow: fix the questions before looking at the data, pre-filter, judge every unit in one batch, then read only what's flagged.
 
+## Automatic checks
+
+Claude rarely reaches for the `ask` tool on its own, so the plugin also runs the decision models itself at three points, each with its own toggle in the plugin options. Their calls show up in `/decision-models:stats` like any other.
+
+| Option | Default | When it runs | What Claude gets |
+|---|---|---|---|
+| **Check commits** | on | After a Bash command runs `git commit` and creates a commit (two or more files) | If a file is unrelated to the commit message (p ≥ 0.8), a note naming it, so Claude splits it into its own commit. Up to 30 files, one call each. |
+| **Triage long output** | on | After a Grep, Glob or Bash result of 40 lines or more | A note listing the lines that matter for your latest prompt (p ≥ 0.8). Claude still sees the full output. Up to 320 lines, 32 per call. |
+| **Catch early stops** | off | When Claude ends its turn | If it stopped partway through (said there was more to do, didn't ask you anything), it's told to continue or say plainly that it's done. Never twice in a row. |
+
+They use the default model and consensus setting, and do nothing when no API key is set.
+
 **Write paths without `@`.** `@file` attaches the whole file to Claude's prompt before the model sees it, which spends the tokens this plugin exists to save. A bare path is read by the server and never enters Claude's context.
 
 ## Development
@@ -96,7 +108,7 @@ For bulk work, the `ask` tool takes `items`: up to 500 file or image paths judge
 ```
 npm install
 npm run typecheck
-npm run build   # writes dist/server.js, which is committed
+npm run build   # writes dist/server.js and dist/hook.js, which are committed
 cd ../.. && claude --plugin-dir plugins/decision-models
 ```
 

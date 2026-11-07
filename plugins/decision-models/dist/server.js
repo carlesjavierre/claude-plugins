@@ -36657,132 +36657,8 @@ var StdioServerTransport = class {
 // src/server.ts
 import { extname as extname2 } from "node:path";
 
-// src/consensus.ts
-var verdict = (a) => a.type === "yes_no" ? a.probability >= 0.5 ? "yes" : "no" : a.type === "choice" ? a.none_fit ? "none_fit" : a.choice : a.label;
-var mean = (xs) => Math.round(xs.reduce((s, x) => s + x, 0) / xs.length * 1e3) / 1e3;
-function combine(questions, results, errors, rule) {
-  if (results.length === 0) throw new Error(`Every model failed: ${JSON.stringify(errors)}`);
-  return {
-    agreement_rule: rule,
-    partial: Object.keys(errors).length > 0,
-    errors,
-    usage: results.map(({ model, provider, host, latency_ms, input_tokens }) => ({ model, provider, ...host ? { host } : {}, latency_ms, input_tokens })),
-    results: questions.map((q, i) => {
-      const per = results.map((r) => ({ model: r.model, provider: r.provider, ...r.host ? { host: r.host } : {}, verdict: verdict(r.answers[i]), ...r.answers[i] }));
-      const votes = {};
-      for (const p of per) votes[p.verdict] = (votes[p.verdict] ?? 0) + 1;
-      const [top, count] = Object.entries(votes).sort((a, b) => b[1] - a[1])[0];
-      const agreed = rule === "unanimous" ? count === per.length : count * 2 > per.length;
-      return {
-        ...q.name ? { name: q.name } : {},
-        type: q.type,
-        question: q.question,
-        ...q.options ? { options: q.options } : {},
-        ...q.levels ? { levels: q.levels } : {},
-        agreed,
-        answer: agreed ? top : null,
-        votes,
-        ...q.type === "yes_no" ? { mean_probability: mean(per.map((p) => p.probability)) } : {},
-        ...q.type === "score" ? { mean_score: mean(per.map((p) => p.score)) } : {},
-        per_model: per
-      };
-    })
-  };
-}
-
-// src/stats.ts
-import { appendFile, mkdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
-var raw = process.env.CLAUDE_PLUGIN_DATA;
-var dir = raw && !raw.includes("${") ? raw : void 0;
-var file2 = dir ? join(dir, "calls.jsonl") : void 0;
-async function record2(entry) {
-  if (!file2) return;
-  try {
-    await mkdir(dir, { recursive: true });
-    await appendFile(file2, JSON.stringify(entry) + "\n");
-  } catch {
-  }
-}
-var PRICE_PER_M = { jev: 0.042, clef: 0.24, "clef-flash": 0.038, "gpt-6-luna": 0.1 };
-var PRICES_AS_OF = "2026-11-01";
-var percentile = (sorted, q) => sorted.length ? sorted[Math.max(0, Math.ceil(q * sorted.length) - 1)] : null;
-function summarize(calls) {
-  const byRoute = /* @__PURE__ */ new Map();
-  let consensusQuestions = 0;
-  let agreed = 0;
-  for (const call of calls) {
-    for (const m of call.models) {
-      const key = `${m.model} via ${m.provider}${m.host ? ` (${m.host})` : ""}`;
-      const s = byRoute.get(key) ?? { latencies: [], calls: 0, errors: 0, input_tokens: 0, cost: 0, estimated: false, unpriced: false };
-      s.calls++;
-      if (!m.ok) s.errors++;
-      if (m.ok && m.latency_ms !== void 0) s.latencies.push(m.latency_ms);
-      s.input_tokens += m.input_tokens ?? 0;
-      if (m.cost_usd !== void 0) s.cost += m.cost_usd;
-      else if (m.input_tokens && PRICE_PER_M[m.model] !== void 0) {
-        s.cost += m.input_tokens * PRICE_PER_M[m.model] / 1e6;
-        s.estimated = true;
-      } else if (m.ok && m.input_tokens) {
-        s.unpriced = true;
-      }
-      byRoute.set(key, s);
-    }
-    consensusQuestions += call.agreed?.length ?? 0;
-    agreed += call.agreed?.filter(Boolean).length ?? 0;
-  }
-  const models = [...byRoute].map(([route, s]) => {
-    const sorted = s.latencies.sort((a, b) => a - b);
-    return {
-      route,
-      calls: s.calls,
-      errors: s.errors,
-      p50_ms: percentile(sorted, 0.5),
-      p95_ms: percentile(sorted, 0.95),
-      input_tokens: s.input_tokens,
-      cost_usd: Number(s.cost.toFixed(6)),
-      cost_estimated: s.estimated,
-      ...s.unpriced ? { cost_unknown: true } : {}
-    };
-  });
-  return {
-    calls: calls.length,
-    questions: calls.reduce((n, c) => n + c.questions, 0),
-    cost_usd: Number(models.reduce((sum, m) => sum + m.cost_usd, 0).toFixed(6)),
-    cost_estimated: models.some((m) => m.cost_estimated),
-    ...models.some((m) => m.cost_unknown) ? { cost_incomplete: true } : {},
-    models,
-    consensus: { questions: consensusQuestions, agreed }
-  };
-}
-async function stats() {
-  if (!file2) return { error: "No plugin data folder (CLAUDE_PLUGIN_DATA is unset), so nothing is recorded." };
-  let text = "";
-  try {
-    text = await readFile(file2, "utf8");
-  } catch {
-    return { calls: 0, note: "No calls recorded yet." };
-  }
-  const all = text.split("\n").filter(Boolean).flatMap((line) => {
-    try {
-      return [JSON.parse(line)];
-    } catch {
-      return [];
-    }
-  });
-  const midnight = /* @__PURE__ */ new Date();
-  midnight.setHours(0, 0, 0, 0);
-  const weekAgo = Date.now() - 7 * 24 * 3600 * 1e3;
-  return {
-    prices_as_of: PRICES_AS_OF,
-    today: summarize(all.filter((c) => new Date(c.t) >= midnight)),
-    last_7_days: summarize(all.filter((c) => Date.parse(c.t) >= weekAgo)),
-    all_time: summarize(all)
-  };
-}
-
 // src/providers.ts
-import { readFile as readFile2 } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { extname, resolve } from "node:path";
 var env = (...names) => names.map((n) => process.env[n]?.trim()).find(Boolean);
 var sourceOf = (names) => {
@@ -36915,12 +36791,12 @@ function resolveModels(spec) {
 var MIME = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" };
 async function loadInput(input2) {
   const files = {};
-  for (const path of input2.files ?? []) files[path] = await readFile2(resolve(path), "utf8");
+  for (const path of input2.files ?? []) files[path] = await readFile(resolve(path), "utf8");
   const images = [];
   for (const path of input2.images ?? []) {
     const mime = MIME[extname(path).toLowerCase()];
     if (!mime) throw new Error(`Unsupported image type: ${path} (use png, jpg or webp).`);
-    images.push({ mime, base64: (await readFile2(resolve(path))).toString("base64") });
+    images.push({ mime, base64: (await readFile(resolve(path))).toString("base64") });
   }
   if (!input2.text && !input2.files?.length && !images.length) throw new Error("Give text, files or images to ask about.");
   return { text: input2.text, files, images };
@@ -37056,6 +36932,144 @@ async function ask(model, questions, loaded) {
   };
 }
 
+// src/stats.ts
+import { appendFile, mkdir, readFile as readFile2 } from "node:fs/promises";
+import { join } from "node:path";
+var raw = process.env.CLAUDE_PLUGIN_DATA;
+var dir = raw && !raw.includes("${") ? raw : void 0;
+var file2 = dir ? join(dir, "calls.jsonl") : void 0;
+async function record2(entry) {
+  if (!file2) return;
+  try {
+    await mkdir(dir, { recursive: true });
+    await appendFile(file2, JSON.stringify(entry) + "\n");
+  } catch {
+  }
+}
+var PRICE_PER_M = { jev: 0.042, clef: 0.24, "clef-flash": 0.038, "gpt-6-luna": 0.1 };
+var PRICES_AS_OF = "2026-11-01";
+var percentile = (sorted, q) => sorted.length ? sorted[Math.max(0, Math.ceil(q * sorted.length) - 1)] : null;
+function summarize(calls) {
+  const byRoute = /* @__PURE__ */ new Map();
+  let consensusQuestions = 0;
+  let agreed = 0;
+  for (const call of calls) {
+    for (const m of call.models) {
+      const key = `${m.model} via ${m.provider}${m.host ? ` (${m.host})` : ""}`;
+      const s = byRoute.get(key) ?? { latencies: [], calls: 0, errors: 0, input_tokens: 0, cost: 0, estimated: false, unpriced: false };
+      s.calls++;
+      if (!m.ok) s.errors++;
+      if (m.ok && m.latency_ms !== void 0) s.latencies.push(m.latency_ms);
+      s.input_tokens += m.input_tokens ?? 0;
+      if (m.cost_usd !== void 0) s.cost += m.cost_usd;
+      else if (m.input_tokens && PRICE_PER_M[m.model] !== void 0) {
+        s.cost += m.input_tokens * PRICE_PER_M[m.model] / 1e6;
+        s.estimated = true;
+      } else if (m.ok && m.input_tokens) {
+        s.unpriced = true;
+      }
+      byRoute.set(key, s);
+    }
+    consensusQuestions += call.agreed?.length ?? 0;
+    agreed += call.agreed?.filter(Boolean).length ?? 0;
+  }
+  const models = [...byRoute].map(([route, s]) => {
+    const sorted = s.latencies.sort((a, b) => a - b);
+    return {
+      route,
+      calls: s.calls,
+      errors: s.errors,
+      p50_ms: percentile(sorted, 0.5),
+      p95_ms: percentile(sorted, 0.95),
+      input_tokens: s.input_tokens,
+      cost_usd: Number(s.cost.toFixed(6)),
+      cost_estimated: s.estimated,
+      ...s.unpriced ? { cost_unknown: true } : {}
+    };
+  });
+  return {
+    calls: calls.length,
+    questions: calls.reduce((n, c) => n + c.questions, 0),
+    cost_usd: Number(models.reduce((sum, m) => sum + m.cost_usd, 0).toFixed(6)),
+    cost_estimated: models.some((m) => m.cost_estimated),
+    ...models.some((m) => m.cost_unknown) ? { cost_incomplete: true } : {},
+    models,
+    consensus: { questions: consensusQuestions, agreed }
+  };
+}
+async function stats() {
+  if (!file2) return { error: "No plugin data folder (CLAUDE_PLUGIN_DATA is unset), so nothing is recorded." };
+  let text = "";
+  try {
+    text = await readFile2(file2, "utf8");
+  } catch {
+    return { calls: 0, note: "No calls recorded yet." };
+  }
+  const all = text.split("\n").filter(Boolean).flatMap((line) => {
+    try {
+      return [JSON.parse(line)];
+    } catch {
+      return [];
+    }
+  });
+  const midnight = /* @__PURE__ */ new Date();
+  midnight.setHours(0, 0, 0, 0);
+  const weekAgo = Date.now() - 7 * 24 * 3600 * 1e3;
+  return {
+    prices_as_of: PRICES_AS_OF,
+    today: summarize(all.filter((c) => new Date(c.t) >= midnight)),
+    last_7_days: summarize(all.filter((c) => Date.parse(c.t) >= weekAgo)),
+    all_time: summarize(all)
+  };
+}
+
+// src/consensus.ts
+var verdict = (a) => a.type === "yes_no" ? a.probability >= 0.5 ? "yes" : "no" : a.type === "choice" ? a.none_fit ? "none_fit" : a.choice : a.label;
+var mean = (xs) => Math.round(xs.reduce((s, x) => s + x, 0) / xs.length * 1e3) / 1e3;
+function combine(questions, results, errors, rule) {
+  if (results.length === 0) throw new Error(`Every model failed: ${JSON.stringify(errors)}`);
+  return {
+    agreement_rule: rule,
+    partial: Object.keys(errors).length > 0,
+    errors,
+    usage: results.map(({ model, provider, host, latency_ms, input_tokens }) => ({ model, provider, ...host ? { host } : {}, latency_ms, input_tokens })),
+    results: questions.map((q, i) => {
+      const per = results.map((r) => ({ model: r.model, provider: r.provider, ...r.host ? { host: r.host } : {}, verdict: verdict(r.answers[i]), ...r.answers[i] }));
+      const votes = {};
+      for (const p of per) votes[p.verdict] = (votes[p.verdict] ?? 0) + 1;
+      const [top, count] = Object.entries(votes).sort((a, b) => b[1] - a[1])[0];
+      const agreed = rule === "unanimous" ? count === per.length : count * 2 > per.length;
+      return {
+        ...q.name ? { name: q.name } : {},
+        type: q.type,
+        question: q.question,
+        ...q.options ? { options: q.options } : {},
+        ...q.levels ? { levels: q.levels } : {},
+        agreed,
+        answer: agreed ? top : null,
+        votes,
+        ...q.type === "yes_no" ? { mean_probability: mean(per.map((p) => p.probability)) } : {},
+        ...q.type === "score" ? { mean_score: mean(per.map((p) => p.score)) } : {},
+        per_model: per
+      };
+    })
+  };
+}
+async function judge(chosen, questions, loaded) {
+  const settled = await Promise.allSettled(chosen.map((m) => ask(m, questions, loaded)));
+  const results = [];
+  const errors = {};
+  settled.forEach((s, i) => s.status === "fulfilled" ? results.push(s.value) : errors[chosen[i]] = String(s.reason?.message ?? s.reason));
+  const output2 = combine(questions, results, errors, agreement);
+  await record2({
+    t: (/* @__PURE__ */ new Date()).toISOString(),
+    questions: questions.length,
+    models: settled.map((s, i) => s.status === "fulfilled" ? { model: chosen[i], provider: s.value.provider, host: s.value.host, ok: true, latency_ms: s.value.latency_ms, input_tokens: s.value.input_tokens, cost_usd: s.value.cost_usd } : { model: chosen[i], provider: routes.get(chosen[i])[0].provider, ok: false }),
+    ...results.length > 1 ? { agreed: output2.results.map((r) => r.agreed) } : {}
+  });
+  return output2;
+}
+
 // src/server.ts
 var configured = [...routes.keys()];
 var defaults = defaultModels();
@@ -37114,20 +37128,6 @@ server.registerTool(
     }
   }
 );
-async function judge(chosen, questions, loaded) {
-  const settled = await Promise.allSettled(chosen.map((m) => ask(m, questions, loaded)));
-  const results = [];
-  const errors = {};
-  settled.forEach((s, i) => s.status === "fulfilled" ? results.push(s.value) : errors[chosen[i]] = String(s.reason?.message ?? s.reason));
-  const output2 = combine(questions, results, errors, agreement);
-  await record2({
-    t: (/* @__PURE__ */ new Date()).toISOString(),
-    questions: questions.length,
-    models: settled.map((s, i) => s.status === "fulfilled" ? { model: chosen[i], provider: s.value.provider, host: s.value.host, ok: true, latency_ms: s.value.latency_ms, input_tokens: s.value.input_tokens, cost_usd: s.value.cost_usd } : { model: chosen[i], provider: routes.get(chosen[i])[0].provider, ok: false }),
-    ...results.length > 1 ? { agreed: output2.results.map((r) => r.agreed) } : {}
-  });
-  return output2;
-}
 var BATCH_CONCURRENCY = 16;
 async function batch(chosen, questions, items, framing) {
   const names = questions.map((q, i) => q.name ?? `q${i + 1}`);

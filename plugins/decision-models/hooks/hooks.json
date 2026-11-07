@@ -10,6 +10,29 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/hook.js\"",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/hook.js\"",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "hooks": [

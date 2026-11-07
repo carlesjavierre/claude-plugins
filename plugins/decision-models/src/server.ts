@@ -2,9 +2,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { extname } from "node:path";
-import { combine, mean } from "./consensus.ts";
-import { record, stats } from "./stats.ts";
-import { agreement, ask, consensus, defaultModels, enabled, loadInput, MIME, misrouted, providerStatus, resolveModels, routes, type ModelResult, type Question } from "./providers.ts";
+import { judge, mean } from "./consensus.ts";
+import { stats } from "./stats.ts";
+import { agreement, ask, consensus, defaultModels, enabled, loadInput, MIME, misrouted, providerStatus, resolveModels, routes, type Question } from "./providers.ts";
 
 const configured = [...routes.keys()];
 const defaults = defaultModels();
@@ -68,23 +68,6 @@ server.registerTool(
     }
   },
 );
-
-async function judge(chosen: string[], questions: Question[], loaded: Awaited<ReturnType<typeof loadInput>>) {
-  const settled = await Promise.allSettled(chosen.map((m) => ask(m, questions, loaded)));
-  const results: ModelResult[] = [];
-  const errors: Record<string, string> = {};
-  settled.forEach((s, i) => (s.status === "fulfilled" ? results.push(s.value) : (errors[chosen[i]] = String(s.reason?.message ?? s.reason))));
-  const output = combine(questions, results, errors, agreement);
-  await record({
-    t: new Date().toISOString(),
-    questions: questions.length,
-    models: settled.map((s, i) => s.status === "fulfilled"
-      ? { model: chosen[i], provider: s.value.provider, host: s.value.host, ok: true, latency_ms: s.value.latency_ms, input_tokens: s.value.input_tokens, cost_usd: s.value.cost_usd }
-      : { model: chosen[i], provider: routes.get(chosen[i])![0].provider, ok: false }),
-    ...(results.length > 1 ? { agreed: output.results.map((r) => r.agreed) } : {}),
-  });
-  return output;
-}
 
 // ponytail: fixed fan-out of 16 items at a time and no retries; failed items are listed for the caller to re-run.
 const BATCH_CONCURRENCY = 16;

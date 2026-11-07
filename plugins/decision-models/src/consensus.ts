@@ -1,4 +1,5 @@
-import type { Agreement, Answer, ModelResult, Question } from "./providers.ts";
+import { agreement, ask, routes, type Agreement, type Answer, type loadInput, type ModelResult, type Question } from "./providers.ts";
+import { record } from "./stats.ts";
 
 const verdict = (a: Answer) =>
   a.type === "yes_no" ? (a.probability >= 0.5 ? "yes" : "no")
@@ -38,4 +39,21 @@ export function combine(questions: Question[], results: ModelResult[], errors: R
       };
     }),
   };
+}
+
+export async function judge(chosen: string[], questions: Question[], loaded: Awaited<ReturnType<typeof loadInput>>) {
+  const settled = await Promise.allSettled(chosen.map((m) => ask(m, questions, loaded)));
+  const results: ModelResult[] = [];
+  const errors: Record<string, string> = {};
+  settled.forEach((s, i) => (s.status === "fulfilled" ? results.push(s.value) : (errors[chosen[i]] = String(s.reason?.message ?? s.reason))));
+  const output = combine(questions, results, errors, agreement);
+  await record({
+    t: new Date().toISOString(),
+    questions: questions.length,
+    models: settled.map((s, i) => s.status === "fulfilled"
+      ? { model: chosen[i], provider: s.value.provider, host: s.value.host, ok: true, latency_ms: s.value.latency_ms, input_tokens: s.value.input_tokens, cost_usd: s.value.cost_usd }
+      : { model: chosen[i], provider: routes.get(chosen[i])![0].provider, ok: false }),
+    ...(results.length > 1 ? { agreed: output.results.map((r) => r.agreed) } : {}),
+  });
+  return output;
 }
